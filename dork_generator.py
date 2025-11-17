@@ -1,115 +1,140 @@
 #!/usr/bin/env python3
-# dork_generator.py – الإصدار 3 (مع دعم التصنيف والمتغيرات)
-import argparse, random, urllib.parse, webbrowser, csv, sys, os
+# Smart Google-Dork Generator v2.1 (Refined)
+import argparse, json, csv, random, urllib.parse, webbrowser, sys, os
+from typing import List, Tuple
 
-# عوامل تشغيل Google Dorks المدعومة
-OPS = ('site','inurl','intitle','intext','filetype','allintext','allintitle','allinurl', 'cache', 'related', 'info', 'link')
-QUOTE = lambda x: f'"{x}"' if ' ' in x and not (x.startswith('"') and x.endswith('"')) else x
+class Colors:
+    HEADER = '\033[95m'; BLUE = '\033[94m'; GREEN = '\033[92m'
+    WARNING = '\033[93m'; FAIL = '\033[91m'; ENDC = '\033[0m'; BOLD = '\033[1m'
 
-def iter_dorks(path):
-    """
-    قراءة ملف الـ Dorks، وتحديد الفئات، وتصفية الـ Dorks الصالحة.
-    """
-    current_category = "Uncategorized"
-    dorks_list = []
+# تحسين القاموس ليشمل أنواع البحث المختلفة
+LANG = {
+    'ar': {
+        'gen': '[+] بحث عام دقيق:',
+        'files': '[+] استهداف الملفات والمستندات:',
+        'url': '[+] استهداف العناوين والروابط:',
+        'admin': '[+] لوحات التحكم والأنظمة:',
+        'sensitive': '[+] ملفات سرية ومعلومات حساسة:',
+        'link': '🔗 الرابط:',
+        'saved': '✅ تم الحفظ بنجاح في:',
+        'opening': '🚀 جاري فتح الروابط في المتصفح...',
+        'random_pick': '🔀 تم اختيار ({}) نتائج عشوائية.'
+    },
+    'en': {
+        'gen': '[+] General Precision:',
+        'files': '[+] Document Hunter:',
+        'url': '[+] Title & URL Focus:',
+        'admin': '[+] Admin & Login Pages:',
+        'sensitive': '[+] Sensitive Info Hunter:',
+        'link': '🔗 Link:',
+        'saved': '✅ Saved successfully to:',
+        'opening': '🚀 Opening links in browser...',
+        'random_pick': '🔀 Randomly selected ({}) queries.'
+    }
+}
+
+def build_google_link(q: str) -> str:
+    return "https://www.google.com/search?q=" + urllib.parse.quote_plus(q)
+
+def generate_queries(keyword: str, domain=None, filetype=None,
+                     exclude=None, strict=False, lang='ar') -> List[Tuple[str, str]]:
+    queries = []
+    term = f'"{keyword}"' if strict else keyword
+    exclusion = f" -{exclude}" if exclude else ""
+    
+    # دالة مساعدة لإضافة الاستعلام مع نوعه الصحيح
+    def add(type_key: str, q: str):
+        # جلب الوصف الصحيح بناءً على اللغة ونوع البحث
+        queries.append((LANG[lang][type_key], q))
+
+    # 1. General
+    add('gen', f'{term} {exclusion}' + (f' site:{domain}' if domain else ''))
+
+    # 2. Files
+    docs = f'filetype:{filetype}' if filetype else '(filetype:pdf OR filetype:doc OR filetype:docx OR filetype:xls OR filetype:ppt)'
+    add('files', f'{term} {docs} {exclusion}' + (f' site:{domain}' if domain else ''))
+
+    # 3. Structure (Title/URL)
+    add('url', f'(intitle:"{keyword}" OR inurl:"{keyword}") {exclusion}' + (f' site:{domain}' if domain else ''))
+
+    # 4. Admin & Login
+    add('admin', f'{term} (intitle:"index of" OR intitle:"login" OR intitle:"admin" OR inurl:login) {exclusion}' + (f' site:{domain}' if domain else ''))
+
+    # 5. Sensitive
+    sensitive = f'{term} (intext:"confidential" OR intext:"internal use only" OR intext:"password") {exclusion}'
+    if filetype: sensitive += f' filetype:{filetype}'
+    if domain: sensitive += f' site:{domain}'
+    add('sensitive', sensitive)
+
+    return queries
+
+def save_results(results: List[Tuple[str, str]], fmt: str, lang: str = 'ar'):
+    # تجهيز البيانات للحفظ
+    data = [{'type': t.strip('[:] '), 'dork': d, 'link': build_google_link(d)} for t, d in results]
+    fname = f'dorks_results.{fmt}'
+    
     try:
-        with open(path, encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # التعامل مع خطوط التصنيف
-                if line.startswith('# CATEGORY:'):
-                    current_category = line.split(':', 1)[1].strip()
-                    continue
-                
-                # تصفية الـ Dorks الصالحة
-                if not line.startswith('#') and any(line.startswith(op + ':') for op in OPS):
-                    dorks_list.append({
-                        'dork': line,
-                        'category': current_category
-                    })
-    except FileNotFoundError:
-        sys.exit(f'Error: Dorks file not found at {path}')
-    except Exception as e:
-        sys.exit(f'Error reading dorks file: {e}')
+        if fmt == 'json':
+            with open(fname, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+        elif fmt == 'csv':
+            with open(fname, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Type', 'Dork', 'Link'])
+                writer.writerows([(row['type'], row['dork'], row['link']) for row in data])
+        else:  # txt
+            with open(fname, 'w', encoding='utf-8') as f:
+                for row in data:
+                    f.write(f"{row['type']}\n{row['dork']}\n{row['link']}\n" + "-"*40 + "\n")
         
-    return dorks_list
-
-def build_url(dork): 
-    """بناء رابط البحث مع ترميز URL."""
-    return "https://www.google.com/search?q=" + urllib.parse.quote_plus(dork)
+        print(f"{Colors.GREEN}{LANG[lang]['saved']} {Colors.BOLD}{fname}{Colors.ENDC}")
+    except Exception as e:
+        print(f"{Colors.FAIL}Error saving file: {e}{Colors.ENDC}")
 
 def main():
-    p = argparse.ArgumentParser(
-        description="Google-Dorks runner (v3) - Supports categories and variable substitution.",
-        formatter_class=argparse.RawTextHelpFormatter
-    )
-    p.add_argument('-f','--file', default='dorks.txt', help='Path to the dorks file. Default is dorks.txt')
-    p.add_argument('-l','--list', action='store_true', help='List only (use with -c to list categories)')
-    p.add_argument('-o','--open', action='store_true', help='Open in browser')
-    p.add_argument('-s','--search', help='Keyword filter')
-    p.add_argument('-e','--exact', action='store_true', help='Quote keyword filter')
-    p.add_argument('-r','--random', type=int, help='Pick N random dorks')
-    p.add_argument('-c','--category', help='Filter by category name')
-    p.add_argument('-t','--target', help='Target domain or keyword for variable substitution (e.g., {target_domain})')
-    p.add_argument('--csv', help='Export results to csv file')
-    args = p.parse_args()
-
-    dorks_data = iter_dorks(args.file)
-    if not dorks_data: sys.exit('No valid dorks found.')
-
-    # 1. تصفية حسب الفئة
-    if args.category:
-        dorks_data = [d for d in dorks_data if args.category.lower() in d['category'].lower()]
-        if not dorks_data: sys.exit(f'No dorks found in category "{args.category}".')
-
-    # 2. استبدال المتغيرات
-    if args.target:
-        for d in dorks_data:
-            d['dork'] = d['dork'].replace('{target_domain}', args.target).replace('{keyword}', args.target)
+    parser = argparse.ArgumentParser(description="Smart Google-Dork Generator v2.1", formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("keyword", help="الكلمة المفتاحية (Target)")
+    parser.add_argument("-d", "--domain", help="نطاق الموقع (ex: sa, gov.ae)")
+    parser.add_argument("-f", "--filetype", help="نوع الملف (ex: pdf)")
+    parser.add_argument("-x", "--exclude", help="استبعاد كلمات")
+    parser.add_argument("-e", "--exact", action="store_true", help="بحث حرفي دقيق")
+    parser.add_argument("-r", "--random", type=int, help="عدد عشوائي للنتائج")
+    parser.add_argument("-o", "--open", action="store_true", help="فتح في المتصفح")
+    parser.add_argument("--save", choices=['json', 'csv', 'txt'], help="حفظ النتائج")
+    parser.add_argument("--lang", choices=['ar', 'en'], default='ar', help="اللغة (ar/en)")
     
-    # 3. تصفية حسب الكلمة المفتاحية
-    if args.search:
-        search_term = QUOTE(args.search) if args.exact else args.search
-        dorks_data = [d for d in dorks_data if search_term.lower() in d['dork'].lower()]
-        if not dorks_data: sys.exit(f'No dorks found matching "{args.search}".')
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(1)
 
-    # 4. اختيار عشوائي
+    args = parser.parse_args()
+
+    # توليد النتائج
+    results = generate_queries(args.keyword, args.domain, args.filetype, args.exclude, args.exact, args.lang)
+
+    # المعالجة العشوائية
     if args.random:
-        dorks_data = random.sample(dorks_data, min(args.random, len(dorks_data)))
+        if args.random > len(results): args.random = len(results)
+        results = random.sample(results, args.random)
+        print(Colors.WARNING + LANG[args.lang]['random_pick'].format(len(results)) + Colors.ENDC)
 
-    # 5. وضع القائمة
-    if args.list:
-        if not args.category:
-            print("Available Categories:")
-            categories = sorted(list(set(d['category'] for d in dorks_data)))
-            for cat in categories:
-                print(f"- {cat}")
-            print("\nUse -c <category_name> to list dorks in that category.")
-        else:
-            print(f"Dorks in Category: {args.category}")
-            for d in dorks_data: print(d['dork'])
-        return
+    # حفظ النتائج
+    if args.save:
+        save_results(results, args.save, args.lang)
 
-    # 6. بناء الروابط
-    dorks = [d['dork'] for d in dorks_data]
-    urls = [build_url(d) for d in dorks]
-
-    # 7. تصدير CSV
-    if args.csv:
-        with open(args.csv, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(['Dork', 'URL'])
-            writer.writerows(zip(dorks, urls))
-        print(f'Saved {len(urls)} rows to {args.csv}')
-
-    # 8. الفتح أو الطباعة
+    # فتح الروابط (بدون إيقاف الطباعة)
     if args.open:
-        print(f"Opening {len(urls)} dorks in browser...")
-        for u in urls: webbrowser.open_new_tab(u)
-    else:
-        for u in urls: print(u)
+        print(Colors.BLUE + LANG[args.lang]['opening'] + Colors.ENDC)
+        for _, dork in results:
+            webbrowser.open_new_tab(build_google_link(dork))
 
-if __name__ == '__main__': main()
+    # طباعة النتائج على الشاشة
+    print("\n" + "="*60)
+    for title, dork in results:
+        print(f"{Colors.GREEN}{title}{Colors.ENDC}")
+        print(f"{Colors.BOLD}{dork}{Colors.ENDC}")
+        print(f"{LANG[args.lang]['link']} {Colors.BLUE}{build_google_link(dork)}{Colors.ENDC}")
+        print("-" * 60)
+
+if __name__ == "__main__":
+    main()

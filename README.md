@@ -1,12 +1,14 @@
-# Google Dorks Generator (v3)
+# Smart Google-Dork Generator (v2.1 Refined)
 
-أداة بسيطة مكتوبة بلغة Python لتوليد استفسارات بحث متقدمة على جوجل (Google Dorks) من قائمة محددة.
+أداة ذكية مكتوبة بلغة Python لتوليد استفسارات بحث متقدمة على جوجل (Google Dorks) بناءً على كلمة مفتاحية واحدة، مما يسهل عملية البحث عن معلومات محددة.
 
-## الميزات الجديدة في الإصدار 3
+## الميزات الرئيسية
 
-*   **التصنيف (Categories):** تجميع الـ Dorks في فئات لتسهيل التصفية.
-*   **استبدال المتغيرات:** دعم استبدال المتغيرات مثل `{target_domain}` و `{keyword}` بقيمة محددة من سطر الأوامر.
-*   **عوامل تشغيل إضافية:** دعم عوامل تشغيل بحث Google إضافية مثل `cache:` و `related:`.
+*   **توليد ذكي:** توليد 5 أنواع مختلفة من استعلامات الـ Dorks (عام، ملفات، عناوين/روابط، لوحات تحكم، معلومات حساسة) بناءً على كلمة مفتاحية واحدة.
+*   **دعم النطاق ونوع الملف:** إمكانية تحديد نطاق البحث (`--domain`) ونوع الملف (`--filetype`).
+*   **تصدير النتائج:** حفظ النتائج في ملفات JSON، CSV، أو TXT.
+*   **دعم اللغتين:** دعم واجهة المستخدم باللغتين العربية والإنجليزية.
+*   **بحث عشوائي:** اختيار عدد عشوائي من النتائج لتقليل خطر الحظر.
 
 ## المتطلبات
 
@@ -22,43 +24,31 @@
 
 2.  **التشغيل:**
 
-    *   **لعرض قائمة التصنيفات المتاحة:**
+    الأداة تتطلب تمرير كلمة مفتاحية كأول وسيط.
+
+    *   **مثال أساسي (البحث عن "password"):**
         ```bash
-        python3 dork_generator.py -l
+        python3 dork_generator.py "password"
         ```
 
-    *   **لعرض الـ Dorks في تصنيف معين (مثلاً "Login Pages and Admin Panels"):**
+    *   **مثال مع تحديد النطاق ونوع الملف (البحث عن "secret" في نطاق "example.com" ونوع ملف "pdf"):**
         ```bash
-        python3 dork_generator.py -l -c "Login Pages and Admin Panels"
+        python3 dork_generator.py "secret" -d "example.com" -f "pdf"
         ```
 
-    *   **للبحث عن Dork معين وفتحه (مثلاً للبحث عن Dorks متعلقة بـ "Jira"):**
+    *   **مثال مع الحفظ في ملف CSV وفتح النتائج في المتصفح:**
         ```bash
-        python3 dork_generator.py -s Jira --open
+        python3 dork_generator.py "admin panel" --save csv -o
         ```
 
-    *   **لاستبدال متغير `{target_domain}` في الـ Dorks والبحث عن كلمة مفتاحية (مثلاً "admin") وفتح النتائج:**
+    *   **مثال مع البحث الحرفي الدقيق واستبعاد كلمة "demo":**
         ```bash
-        python3 dork_generator.py -t example.com -s admin --open
-        ```
-
-    *   **لتصدير النتائج إلى ملف CSV:**
-        ```bash
-        python3 dork_generator.py -t example.com --csv results.csv
-        ```
-
-    *   **لفتح جميع الـ Dorks (استخدم بحذر):**
-        ```bash
-        python3 dork_generator.py -o
-        ```
-
-    *   **لإنشاء روابط البحث دون فتحها:**
-        ```bash
-        python3 dork_generator.py
+        python3 dork_generator.py "internal report" -e -x "demo"
         ```
 
 ## الملفات
 
 *   `dork_generator.py`: ملف الكود الرئيسي للأداة.
-*   `dorks.txt`: ملف يحتوي على قائمة الـ Google Dorks المصنفة (واحد في كل سطر).
 *   `README.md`: هذا الملف.
+
+**ملاحظة:** تم إزالة ملف `dorks.txt` من هذا الإصدار لأنه لم يعد يعتمد على قائمة ثابتة من الـ Dorks، بل يقوم بتوليدها ديناميكيًا.
