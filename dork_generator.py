@@ -1,100 +1,115 @@
-import argparse
-import webbrowser
-import urllib.parse
-import os
+#!/usr/bin/env python3
+# dork_generator.py – الإصدار 3 (مع دعم التصنيف والمتغيرات)
+import argparse, random, urllib.parse, webbrowser, csv, sys, os
 
-def load_dorks(file_path):
-    """Loads Google Dorks from a file, filtering out empty lines and comments."""
-    dorks = []
+# عوامل تشغيل Google Dorks المدعومة
+OPS = ('site','inurl','intitle','intext','filetype','allintext','allintitle','allinurl', 'cache', 'related', 'info', 'link')
+QUOTE = lambda x: f'"{x}"' if ' ' in x and not (x.startswith('"') and x.endswith('"')) else x
+
+def iter_dorks(path):
+    """
+    قراءة ملف الـ Dorks، وتحديد الفئات، وتصفية الـ Dorks الصالحة.
+    """
+    current_category = "Uncategorized"
+    dorks_list = []
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
-                # Filter out empty lines, comments, and non-dork lines
-                if line and not line.startswith('#') and any(line.startswith(op + ':') for op in ['site', 'inurl', 'intitle', 'intext', 'filetype', 'allintext', 'allintitle', 'allinurl', 'cache', 'related', 'info', 'link']):
-                    dorks.append(line)
+                if not line:
+                    continue
+                
+                # التعامل مع خطوط التصنيف
+                if line.startswith('# CATEGORY:'):
+                    current_category = line.split(':', 1)[1].strip()
+                    continue
+                
+                # تصفية الـ Dorks الصالحة
+                if not line.startswith('#') and any(line.startswith(op + ':') for op in OPS):
+                    dorks_list.append({
+                        'dork': line,
+                        'category': current_category
+                    })
     except FileNotFoundError:
-        print(f"Error: Dorks file not found at {file_path}")
-        exit(1)
-    return dorks
+        sys.exit(f'Error: Dorks file not found at {path}')
+    except Exception as e:
+        sys.exit(f'Error reading dorks file: {e}')
+        
+    return dorks_list
 
-def generate_search_url(dork):
-    """Generates the full Google search URL for a given dork."""
-    base_url = "https://www.google.com/search?q="
-    # URL-encode the dork query
-    encoded_dork = urllib.parse.quote_plus(dork)
-    return base_url + encoded_dork
+def build_url(dork): 
+    """بناء رابط البحث مع ترميز URL."""
+    return "https://www.google.com/search?q=" + urllib.parse.quote_plus(dork)
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="A simple tool to generate and open Google Dorks search queries from a list.",
+    p = argparse.ArgumentParser(
+        description="Google-Dorks runner (v3) - Supports categories and variable substitution.",
         formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument(
-        '-f', '--file',
-        default='dorks.txt',
-        help="Path to the file containing Google Dorks (one dork per line). Default is 'dorks.txt'."
-    )
-    parser.add_argument(
-        '-l', '--list',
-        action='store_true',
-        help="List all dorks from the file without opening them."
-    )
-    parser.add_argument(
-        '-o', '--open',
-        action='store_true',
-        help="Open the generated search URLs in the default web browser."
-    )
-    parser.add_argument(
-        '-s', '--search',
-        type=str,
-        help="Search for a specific dork (or part of a dork) in the list and open it."
-    )
-    
-    args = parser.parse_args()
-    
-    dorks = load_dorks(args.file)
-    
-    if not dorks:
-        print("No valid dorks found in the file.")
-        return
+    p.add_argument('-f','--file', default='dorks.txt', help='Path to the dorks file. Default is dorks.txt')
+    p.add_argument('-l','--list', action='store_true', help='List only (use with -c to list categories)')
+    p.add_argument('-o','--open', action='store_true', help='Open in browser')
+    p.add_argument('-s','--search', help='Keyword filter')
+    p.add_argument('-e','--exact', action='store_true', help='Quote keyword filter')
+    p.add_argument('-r','--random', type=int, help='Pick N random dorks')
+    p.add_argument('-c','--category', help='Filter by category name')
+    p.add_argument('-t','--target', help='Target domain or keyword for variable substitution (e.g., {target_domain})')
+    p.add_argument('--csv', help='Export results to csv file')
+    args = p.parse_args()
 
-    if args.list:
-        print(f"--- Loaded {len(dorks)} Google Dorks from {args.file} ---")
-        for i, dork in enumerate(dorks, 1):
-            print(f"{i}. {dork}")
-        return
+    dorks_data = iter_dorks(args.file)
+    if not dorks_data: sys.exit('No valid dorks found.')
 
+    # 1. تصفية حسب الفئة
+    if args.category:
+        dorks_data = [d for d in dorks_data if args.category.lower() in d['category'].lower()]
+        if not dorks_data: sys.exit(f'No dorks found in category "{args.category}".')
+
+    # 2. استبدال المتغيرات
+    if args.target:
+        for d in dorks_data:
+            d['dork'] = d['dork'].replace('{target_domain}', args.target).replace('{keyword}', args.target)
+    
+    # 3. تصفية حسب الكلمة المفتاحية
     if args.search:
-        matching_dorks = [d for d in dorks if args.search.lower() in d.lower()]
-        if not matching_dorks:
-            print(f"No dorks found matching '{args.search}'.")
-            return
-        
-        print(f"--- Found {len(matching_dorks)} matching dorks for '{args.search}' ---")
-        for i, dork in enumerate(matching_dorks, 1):
-            print(f"{i}. {dork}")
-            if args.open:
-                url = generate_search_url(dork)
-                print(f"   Opening: {url}")
-                webbrowser.open_new_tab(url)
+        search_term = QUOTE(args.search) if args.exact else args.search
+        dorks_data = [d for d in dorks_data if search_term.lower() in d['dork'].lower()]
+        if not dorks_data: sys.exit(f'No dorks found matching "{args.search}".')
+
+    # 4. اختيار عشوائي
+    if args.random:
+        dorks_data = random.sample(dorks_data, min(args.random, len(dorks_data)))
+
+    # 5. وضع القائمة
+    if args.list:
+        if not args.category:
+            print("Available Categories:")
+            categories = sorted(list(set(d['category'] for d in dorks_data)))
+            for cat in categories:
+                print(f"- {cat}")
+            print("\nUse -c <category_name> to list dorks in that category.")
+        else:
+            print(f"Dorks in Category: {args.category}")
+            for d in dorks_data: print(d['dork'])
         return
 
-    if args.open:
-        print(f"--- Opening {len(dorks)} Google Dorks in your browser ---")
-        for dork in dorks:
-            url = generate_search_url(dork)
-            print(f"Opening: {url}")
-            # Note: In a headless environment, this will likely fail or open a text-based browser.
-            # We use it for demonstration of the tool's capability.
-            webbrowser.open_new_tab(url)
-        print("\nFinished attempting to open all dorks.")
-    else:
-        print("--- Generated Google Search URLs (Use -o or --open to execute) ---")
-        for dork in dorks:
-            url = generate_search_url(dork)
-            print(url)
-        print("\nUse -l to list dorks, -o to open all, or -s <query> to search and open a specific dork.")
+    # 6. بناء الروابط
+    dorks = [d['dork'] for d in dorks_data]
+    urls = [build_url(d) for d in dorks]
 
-if __name__ == "__main__":
-    main()
+    # 7. تصدير CSV
+    if args.csv:
+        with open(args.csv, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Dork', 'URL'])
+            writer.writerows(zip(dorks, urls))
+        print(f'Saved {len(urls)} rows to {args.csv}')
+
+    # 8. الفتح أو الطباعة
+    if args.open:
+        print(f"Opening {len(urls)} dorks in browser...")
+        for u in urls: webbrowser.open_new_tab(u)
+    else:
+        for u in urls: print(u)
+
+if __name__ == '__main__': main()
